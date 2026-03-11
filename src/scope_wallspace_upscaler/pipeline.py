@@ -1,11 +1,8 @@
 import logging
-import os
 from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
-import torch.nn.functional as F
-from scope.core.config import get_model_file_path
+
 from scope.core.pipelines.interface import Pipeline, Requirements
 
 if TYPE_CHECKING:
@@ -58,25 +55,37 @@ class WallspaceUpscalerPipeline(Pipeline):
 
     def _get_model_path(self, filename: str) -> str:
         """Resolve model file path via Scope's artifact system."""
+        import os
+
+        # Try Scope's built-in resolver first
         try:
+            from scope.core.config import get_model_file_path
             return get_model_file_path("ai-forever/Real-ESRGAN", filename)
         except Exception:
-            # Fallback: search common HuggingFace cache locations
-            for base_dir in [
-                os.environ.get("HF_HOME", ""),
-                os.path.join(os.path.expanduser("~"), ".cache", "huggingface"),
-                "/workspace/huggingface",
-            ]:
-                if not base_dir:
-                    continue
-                snapshots = os.path.join(base_dir, "hub", "models--ai-forever--Real-ESRGAN", "snapshots")
-                if os.path.isdir(snapshots):
-                    for entry in os.listdir(snapshots):
-                        candidate = os.path.join(snapshots, entry, filename)
-                        if os.path.isfile(candidate):
-                            return candidate
-            logger.warning("Could not resolve model path for %s, using filename as fallback", filename)
-            return filename
+            pass
+
+        # Fallback: search common HuggingFace cache locations
+        for base_dir in [
+            os.environ.get("HF_HOME", ""),
+            os.path.join(os.path.expanduser("~"), ".cache", "huggingface"),
+            "/workspace/huggingface",
+        ]:
+            if not base_dir:
+                continue
+            snapshots = os.path.join(
+                base_dir, "hub", "models--ai-forever--Real-ESRGAN", "snapshots"
+            )
+            if os.path.isdir(snapshots):
+                for entry in os.listdir(snapshots):
+                    candidate = os.path.join(snapshots, entry, filename)
+                    if os.path.isfile(candidate):
+                        return candidate
+
+        logger.warning(
+            "Could not resolve model path for %s, using filename as fallback",
+            filename,
+        )
+        return filename
 
     def _load_models(self):
         """Load ESRGAN and optionally RIFE models."""
@@ -84,8 +93,15 @@ class WallspaceUpscalerPipeline(Pipeline):
             # Bicubic only — no models needed
             return
 
-        from basicsr.archs.rrdbnet_arch import RRDBNet
-        from realesrgan import RealESRGANer
+        try:
+            from basicsr.archs.rrdbnet_arch import RRDBNet
+            from realesrgan import RealESRGANer
+        except ImportError:
+            logger.warning(
+                "realesrgan/basicsr not installed — falling back to bicubic-only mode"
+            )
+            self.quality_mode = "fast"
+            return
 
         use_half = self.device.type == "cuda"
 
@@ -104,7 +120,6 @@ class WallspaceUpscalerPipeline(Pipeline):
 
         # Load x4 for quality mode or when input requires >2x scale
         target_h, _ = RESOLUTION_MAP.get(self.target_resolution, (1080, 1920))
-        # If target could need >2x from typical inputs (360p=360, 480p=480), load x4
         if self.quality_mode == "quality" or target_h > 960:
             net_x4 = RRDBNet(
                 num_in_ch=3, num_out_ch=3, num_feat=64,
@@ -132,7 +147,6 @@ class WallspaceUpscalerPipeline(Pipeline):
                 self._rife_model = self._rife_model.half()
         except ImportError:
             try:
-                # Fallback import path
                 from rife.model import IFNet
 
                 self._rife_model = IFNet().to(self.device).eval()
@@ -165,20 +179,19 @@ class WallspaceUpscalerPipeline(Pipeline):
         if scale <= 4.0:
             if self.quality_mode == "quality" and self._esrgan_x4 is not None:
                 return "esrgan_x4", target_h, target_w
-            # Balanced: x2 + bicubic (faster, slightly softer)
             return "esrgan_x2", target_h, target_w
 
         # >4x: multi-pass (x4 then x2) for maximum quality
         if self._esrgan_x4 is not None:
             return "esrgan_multi", target_h, target_w
-        # Fallback: x2 + bicubic
         return "esrgan_x2", target_h, target_w
 
     # ── Frame processing ────────────────────────────────────────────────────
 
-    def _upscale_frame(self, frame_np: np.ndarray, plan: str,
+    def _upscale_frame(self, frame_np, plan: str,
                        target_h: int, target_w: int) -> torch.Tensor:
         """Upscale a single HWC uint8 numpy frame. Returns BCHW float32 [0,1]."""
+        import torch.nn.functional as F
 
         if plan == "bicubic":
             t = torch.from_numpy(frame_np).permute(2, 0, 1).unsqueeze(0).float()
@@ -201,9 +214,7 @@ class WallspaceUpscalerPipeline(Pipeline):
                                  mode="bicubic", align_corners=False).clamp(0, 1)
 
         if plan == "esrgan_multi":
-            # Pass 1: x4 upscale
             intermediate, _ = self._esrgan_x4.enhance(frame_np, outscale=4)
-            # Pass 2: x2 upscale on the 4x result
             output, _ = self._esrgan_x2.enhance(intermediate, outscale=2)
             t = torch.from_numpy(output).permute(2, 0, 1).unsqueeze(0).float()
             t = t.to(self.device) / 255.0
@@ -216,9 +227,10 @@ class WallspaceUpscalerPipeline(Pipeline):
 
     def _apply_sharpening(self, tensor: torch.Tensor, strength: float) -> torch.Tensor:
         """Unsharp mask on BCHW tensor."""
+        import torch.nn.functional as F
+
         if strength <= 0.0:
             return tensor
-        # 3x3 average pool as blur kernel
         blurred = F.avg_pool2d(
             F.pad(tensor, [1, 1, 1, 1], mode="reflect"),
             kernel_size=3, stride=1,
@@ -226,13 +238,16 @@ class WallspaceUpscalerPipeline(Pipeline):
         sharpened = tensor + strength * (tensor - blurred)
         return sharpened.clamp(0, 1)
 
-    def _apply_denoise(self, frame_np: np.ndarray, strength: float) -> np.ndarray:
+    def _apply_denoise(self, frame_np, strength: float):
         """Simple pre-upscale denoise via weighted blur blend."""
+        import numpy as np
+        import torch.nn.functional as F
+
         if strength <= 0.0:
             return frame_np
         t = torch.from_numpy(frame_np).permute(2, 0, 1).unsqueeze(0).float()
         t = t.to(self.device) / 255.0
-        k = int(3 + strength * 4) | 1  # Ensure odd kernel size
+        k = int(3 + strength * 4) | 1
         pad = k // 2
         blurred = F.avg_pool2d(
             F.pad(t, [pad, pad, pad, pad], mode="reflect"),
@@ -266,7 +281,11 @@ class WallspaceUpscalerPipeline(Pipeline):
         Input:  kwargs["video"] = list of N tensors, each (1, H, W, C) float32 [0, 255]
         Output: {"video": tensor} in THWC format, float32, [0, 1]
         """
+        import numpy as np
+
         video = kwargs.get("video")
+        if video is None:
+            raise ValueError("WallspaceUpscalerPipeline requires video input")
         if not video:
             return {"video": torch.zeros(1, 1, 1, 3, device=self.device)}
 
@@ -289,7 +308,7 @@ class WallspaceUpscalerPipeline(Pipeline):
             if denoise_strength > 0.0:
                 frame_np = self._apply_denoise(frame_np, denoise_strength)
 
-            # Upscale → BCHW float32 [0,1]
+            # Upscale -> BCHW float32 [0,1]
             result_bchw = self._upscale_frame(frame_np, plan, target_h, target_w)
 
             # Optional post-upscale sharpening
@@ -299,7 +318,6 @@ class WallspaceUpscalerPipeline(Pipeline):
             # Optional RIFE frame interpolation (insert mid-frame before current)
             if self.enable_rife and self._rife_model is not None and self._prev_frame is not None:
                 mid_bchw = self._interpolate_rife(result_bchw, self._prev_frame)
-                # Convert mid-frame to HWC and append
                 mid_hwc = mid_bchw.squeeze(0).permute(1, 2, 0)
                 output_frames.append(mid_hwc)
 
