@@ -173,7 +173,11 @@ class WallspaceUpscalerPipeline(Pipeline):
             self._prev_frame = result.detach()
             output_frames.append(result.squeeze(0).permute(1, 2, 0))
 
-        return {"video": torch.stack(output_frames, dim=0)}
+        out = torch.stack(output_frames, dim=0)
+        # Scope encodes frames via numpy — MPS/CUDA tensors must move to CPU
+        if out.device.type != "cpu":
+            out = out.cpu()
+        return {"video": out}
 
     # ── Fast path: pure tensor, no numpy, no model ─────────────────────────
 
