@@ -2,7 +2,7 @@
 name = "scope-wallspace-upscaler"
 version = "0.1.4"
 description = "Resolution-targeting upscaler (720p/1080p/2K/4K) with optional RIFE frame smoothing for WallSpace.Studio"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "realesrgan",
     "basicsr",
