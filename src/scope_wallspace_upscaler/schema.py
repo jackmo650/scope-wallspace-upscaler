@@ -22,7 +22,7 @@ class WallspaceUpscalerConfig(BasePipelineConfig):
         "Upscales 360p/480p video to 720p, 1080p, 2K, or 4K using Real-ESRGAN "
         "with optional RIFE temporal smoothing"
     )
-    pipeline_version = "0.1.1"
+    pipeline_version = "0.1.3"
     estimated_vram_gb = 4.0
     supports_prompts = False
     supports_lora = False

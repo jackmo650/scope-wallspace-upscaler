@@ -29,11 +29,24 @@ class WallspaceUpscalerPipeline(Pipeline):
         return WallspaceUpscalerConfig
 
     def __init__(self, device: torch.device | None = None, **kwargs):
-        self.device = (
-            device
-            if device is not None
-            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        )
+        if device is not None:
+            self.device = device
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        else:
+            self.device = torch.device("cpu")
+        logger.info("WS Upscaler using device: %s", self.device)
+        # MPS bicubic support varies by PyTorch version — detect at init
+        self._interp_mode = "bicubic"
+        if self.device.type == "mps":
+            try:
+                _test = torch.zeros(1, 1, 4, 4, device=self.device)
+                F.interpolate(_test, size=(8, 8), mode="bicubic", align_corners=False)
+            except Exception:
+                self._interp_mode = "bilinear"
+                logger.info("MPS bicubic not supported, falling back to bilinear")
         self.target_resolution = kwargs.get("target_resolution", "1080p")
         self.quality_mode = kwargs.get("quality_mode", "balanced")
         self.enable_rife = kwargs.get("enable_rife", False)
@@ -180,8 +193,9 @@ class WallspaceUpscalerPipeline(Pipeline):
 
         # Resize
         if t.shape[2] != target_h or t.shape[3] != target_w:
+            align = {"align_corners": False} if self._interp_mode == "bicubic" else {}
             t = F.interpolate(t, size=(target_h, target_w),
-                              mode="bicubic", align_corners=False)
+                              mode=self._interp_mode, **align)
 
         # Sharpen
         if sharpness > 0.0:
@@ -223,8 +237,9 @@ class WallspaceUpscalerPipeline(Pipeline):
         t = torch.from_numpy(output).permute(2, 0, 1).unsqueeze(0).float()
         t = t.to(self.device) / 255.0
         if t.shape[2] != target_h or t.shape[3] != target_w:
+            align = {"align_corners": False} if self._interp_mode == "bicubic" else {}
             t = F.interpolate(t, size=(target_h, target_w),
-                              mode="bicubic", align_corners=False)
+                              mode=self._interp_mode, **align)
 
         if sharpness > 0.0:
             blurred = F.avg_pool2d(F.pad(t, [1, 1, 1, 1], mode="reflect"), 3, stride=1)
