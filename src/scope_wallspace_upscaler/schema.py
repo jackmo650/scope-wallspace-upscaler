@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 from scope.core.pipelines.base_schema import (
     BasePipelineConfig,
@@ -6,6 +8,9 @@ from scope.core.pipelines.base_schema import (
     ui_field_config,
 )
 from scope.core.pipelines.artifacts import HuggingfaceRepoArtifact
+
+TargetResolution = Literal["720p", "1080p", "2k", "4k"]
+QualityMode = Literal["fast", "balanced", "quality"]
 
 
 class WallspaceUpscalerConfig(BasePipelineConfig):
@@ -17,7 +22,7 @@ class WallspaceUpscalerConfig(BasePipelineConfig):
         "Upscales 360p/480p video to 720p, 1080p, 2K, or 4K using Real-ESRGAN "
         "with optional RIFE temporal smoothing"
     )
-    pipeline_version = "0.1.0"
+    pipeline_version = "0.1.1"
     estimated_vram_gb = 4.0
     supports_prompts = False
     supports_lora = False
@@ -37,7 +42,7 @@ class WallspaceUpscalerConfig(BasePipelineConfig):
 
     # ── Load-time parameters (require pipeline reload) ──────────────────────
 
-    target_resolution: str = Field(
+    target_resolution: TargetResolution = Field(
         default="1080p",
         description="Target output resolution for upscaled video",
         json_schema_extra=ui_field_config(
@@ -48,7 +53,7 @@ class WallspaceUpscalerConfig(BasePipelineConfig):
         ),
     )
 
-    quality_mode: str = Field(
+    quality_mode: QualityMode = Field(
         default="balanced",
         description="Fast = bicubic only, Balanced = ESRGAN x2, Quality = ESRGAN x4 multi-pass",
         json_schema_extra=ui_field_config(
