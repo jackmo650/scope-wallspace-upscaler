@@ -1,0 +1,66 @@
+name: Experiment / Idea
+description: Log an experimental idea or concept to explore
+title: "[Experiment]: "
+labels: ["experiment", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Experiment / Idea
+        Capture an idea worth exploring. Experiments require approval before any implementation.
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea / Concept
+      description: What's the idea? Describe the concept clearly.
+      placeholder: Describe your idea or concept.
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What would success look like? What are you trying to learn or prove?
+      placeholder: What's the goal of this experiment?
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Technical Approach
+      description: How might this be implemented or tested?
+      placeholder: Describe the technical approach or prototype plan.
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / Unknowns
+      description: What could go wrong? What don't we know yet?
+      placeholder: List risks, unknowns, or open questions.
+    validations:
+      required: false
+
+  - type: textarea
+    id: success
+    attributes:
+      label: Success Criteria
+      description: How will we evaluate whether the experiment was worth it?
+      placeholder: |
+        - [ ] Prototype demonstrates...
+        - [ ] Performance meets...
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: approval
+    attributes:
+      label: Approval Required
+      description: This experiment requires explicit approval before any implementation begins.
+      options:
+        - label: I understand this experiment will not be started until explicitly approved.
+          required: true
