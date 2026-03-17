@@ -41,4 +41,3 @@ This project follows a **human-in-the-loop** development process:
 3. **Only `approved` issues move forward** — no implementation begins until an issue is explicitly labeled `approved`.
 4. **Implementation happens on explicit instruction** — coding agents and contributors only work on approved, assigned work.
 5. **Pull requests reference an approved issue** — every PR must link back to the issue it addresses.
-
