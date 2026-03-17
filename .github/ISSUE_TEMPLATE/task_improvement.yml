@@ -1,0 +1,70 @@
+name: Task / Improvement
+description: Track a task, refactor, or incremental improvement
+title: "[Task]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Task / Improvement
+        Describe the task or improvement. All work requires explicit approval before implementation.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Background information — why is this task needed now?
+      placeholder: What's the context for this work?
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What is the desired outcome?
+      placeholder: What should be true when this task is complete?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's in scope and what's explicitly out of scope?
+      placeholder: |
+        In scope:
+        - ...
+        Out of scope:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How will we know this task is done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Does this task depend on or block other work?
+      placeholder: List any dependencies or related issues.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: approval
+    attributes:
+      label: Approval Required
+      description: This task requires explicit approval before implementation begins.
+      options:
+        - label: I understand this task will not be implemented until explicitly approved.
+          required: true
